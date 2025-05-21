@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
+import {
+    Card,
+    CardContent,
+    Typography,
+    Button,
+    Grid,
+    TextField,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Box,
+    Chip,
+    Rating,
+} from '@mui/material';
+import { DatePicker, TimePicker, LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { format } from 'date-fns';
+
+interface Doctor {
+    id: number;
+    fullName: string;
+    specialization: string;
+    qualifications: string;
+    experience: number;
+    hospital: string;
+    address: string;
+    city: string;
+    area: string;
+    phoneNumber: string;
+    email: string;
+    availability: {
+        days: string[];
+        startTime: string;
+        endTime: string;
+    };
+    rating: number;
+    totalAppointments: number;
+    reviews: number;
+    consultationFee: number;
+}
+
+interface NearbyDoctorsProps {
+    specialization?: string;
+}
+
+const NearbyDoctors: React.FC<NearbyDoctorsProps> = ({
+    specialization,
+}) => {
+    const { currentUser } = useAuth();
+    const { notify } = useNotification();
+    const [doctors, setDoctors] = useState<Doctor[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+    const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [selectedTime, setSelectedTime] = useState<Date | null>(null);
+    const [reason, setReason] = useState('');
+    const [selectedCity, setSelectedCity] = useState('');
+    const [selectedArea, setSelectedArea] = useState('');
+
+    // Sample cities and areas - In a real app, these would come from your backend
+    const cities = ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix'];
+    const areas = {
+        'New York': ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island'],
+        'Los Angeles': ['Downtown', 'Hollywood', 'Santa Monica', 'Venice', 'Beverly Hills'],
+        'Chicago': ['Loop', 'River North', 'Lincoln Park', 'Wicker Park', 'Hyde Park'],
+        'Houston': ['Downtown', 'Midtown', 'River Oaks', 'Galleria', 'Medical Center'],
+        'Phoenix': ['Downtown', 'Scottsdale', 'Tempe', 'Mesa', 'Chandler']
+    };
+
+    useEffect(() => {
+        fetchDoctors();
+    }, [specialization, selectedCity, selectedArea]);
+
+    const fetchDoctors = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const queryParams = new URLSearchParams();
+            if (selectedCity) queryParams.append('city', selectedCity);
+            if (selectedArea) queryParams.append('area', selectedArea);
+            if (specialization) queryParams.append('specialization', specialization);
+
+            const response = await fetch(`/api/doctors/search?${queryParams}`, {
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch doctors');
+            }
+
+            const data = await response.json();
+            setDoctors(data.doctors);
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch doctors');
+            notify({ message: err.message || 'Failed to fetch doctors', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBookAppointment = (doctor: Doctor) => {
+        setSelectedDoctor(doctor);
+        setIsBookingModalOpen(true);
+    };
+
+    const handleCloseBookingModal = () => {
+        setIsBookingModalOpen(false);
+        setSelectedDoctor(null);
+        setSelectedDate(null);
+        setSelectedTime(null);
+        setReason('');
+    };
+
+    const handleSubmitBooking = async () => {
+        if (!selectedDoctor || !selectedDate || !selectedTime || !reason) {
+            notify({ message: 'Please fill in all fields', type: 'error' });
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/appointments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    doctorId: selectedDoctor.id,
+                    date: format(selectedDate, 'yyyy-MM-dd'),
+                    time: format(selectedTime, 'HH:mm'),
+                    reason,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to book appointment');
+            }
+
+            notify({ message: 'Appointment booked successfully!', type: 'success' });
+            handleCloseBookingModal();
+        } catch (err: any) {
+            notify({ message: err.message || 'Failed to book appointment', type: 'error' });
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center p-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+                <p>{error}</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <Typography variant="h5" component="h2" className="font-semibold">
+                Find Doctors
+            </Typography>
+
+            <div className="flex flex-col space-y-4 md:flex-row md:space-y-0 md:space-x-4">
+                <FormControl fullWidth>
+                    <InputLabel>City</InputLabel>
+                    <Select
+                        value={selectedCity}
+                        label="City"
+                        onChange={(e) => {
+                            setSelectedCity(e.target.value);
+                            setSelectedArea('');
+                        }}
+                    >
+                        <MenuItem value="">All Cities</MenuItem>
+                        {cities.map((city) => (
+                            <MenuItem key={city} value={city}>
+                                {city}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <FormControl fullWidth>
+                    <InputLabel>Area</InputLabel>
+                    <Select
+                        value={selectedArea}
+                        label="Area"
+                        onChange={(e) => setSelectedArea(e.target.value)}
+                        disabled={!selectedCity}
+                    >
+                        <MenuItem value="">All Areas</MenuItem>
+                        {selectedCity && areas[selectedCity as keyof typeof areas].map((area) => (
+                            <MenuItem key={area} value={area}>
+                                {area}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+            </div>
+
+            <Grid container spacing={3}>
+                {doctors.map((doctor) => (
+                    <Grid item xs={12} md={6} lg={4} key={doctor.id}>
+                        <Card className="h-full">
+                            <CardContent>
+                                <Box className="flex justify-between items-start mb-4">
+                                    <Typography variant="h6" component="h3" className="font-semibold">
+                                        Dr. {doctor.fullName}
+                                    </Typography>
+                                    <Chip
+                                        label={`${doctor.rating} ★ (${doctor.totalAppointments} appointments)`}
+                                        color="primary"
+                                        size="small"
+                                    />
+                                </Box>
+                                <Typography color="textSecondary" gutterBottom>
+                                    {doctor.specialization}
+                                </Typography>
+                                <Typography variant="body2" className="mb-2">
+                                    {doctor.hospital}
+                                </Typography>
+                                <Typography variant="body2" className="mb-2">
+                                    {doctor.address}
+                                </Typography>
+                                <Typography variant="body2" color="textSecondary" className="mb-2">
+                                    {doctor.area}, {doctor.city}
+                                </Typography>
+                                <Box className="mt-4 space-y-2">
+                                    <Typography variant="body2">
+                                        <strong>Experience:</strong> {doctor.experience} years
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <strong>Consultation Fee:</strong> ${doctor.consultationFee}
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <strong>Available:</strong> {doctor.availability.days.join(', ')}
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        <strong>Timing:</strong> {doctor.availability.startTime} -{' '}
+                                        {doctor.availability.endTime}
+                                    </Typography>
+                                </Box>
+                                <Button
+                                    variant="contained"
+                                    color="primary"
+                                    fullWidth
+                                    onClick={() => handleBookAppointment(doctor)}
+                                >
+                                    Book Appointment
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </Grid>
+                ))}
+            </Grid>
+
+            <Dialog open={isBookingModalOpen} onClose={handleCloseBookingModal} maxWidth="sm" fullWidth>
+                <DialogTitle>Book Appointment</DialogTitle>
+                <DialogContent>
+                    {selectedDoctor && (
+                        <div className="space-y-4 mt-4">
+                            <Typography variant="body1">
+                                Book an appointment with Dr. {selectedDoctor.fullName}
+                            </Typography>
+
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                <DatePicker
+                                    label="Select Date"
+                                    value={selectedDate}
+                                    onChange={(newValue: Date | null) => setSelectedDate(newValue)}
+                                    minDate={new Date()}
+                                    slotProps={{
+                                        textField: {
+                                            fullWidth: true,
+                                            margin: 'normal',
+                                        },
+                                    }}
+                                />
+
+                                <TimePicker
+                                    label="Select Time"
+                                    value={selectedTime}
+                                    onChange={(newValue: Date | null) => setSelectedTime(newValue)}
+                                    slotProps={{
+                                        textField: {
+                                            fullWidth: true,
+                                            margin: 'normal',
+                                        },
+                                    }}
+                                />
+                            </LocalizationProvider>
+
+                            <TextField
+                                fullWidth
+                                label="Reason for Visit"
+                                multiline
+                                rows={3}
+                                value={reason}
+                                onChange={(e) => setReason(e.target.value)}
+                                required
+                            />
+                        </div>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseBookingModal}>Cancel</Button>
+                    <Button
+                        onClick={handleSubmitBooking}
+                        variant="contained"
+                        color="primary"
+                        disabled={!selectedDate || !selectedTime || !reason}
+                    >
+                        Book Appointment
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </div>
+    );
+};
+
+export default NearbyDoctors; 

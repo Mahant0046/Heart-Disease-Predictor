@@ -1,0 +1,265 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
+import {
+    Card,
+    CardContent,
+    Typography,
+    Button,
+    Grid,
+    Chip,
+    Box,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+} from '@mui/material';
+import { format, parseISO } from 'date-fns';
+
+interface Appointment {
+    id: number;
+    userId: number;
+    doctorId: number;
+    date: string;
+    time: string;
+    reason: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    user: {
+        id: number;
+        fullName: string;
+        email: string;
+        phone: string;
+    };
+}
+
+const DoctorAppointments: React.FC = () => {
+    const { currentUser } = useAuth();
+    const { notify } = useNotification();
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+    const [statusNote, setStatusNote] = useState('');
+
+    useEffect(() => {
+        fetchAppointments();
+    }, []);
+
+    const fetchAppointments = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const response = await fetch('/api/appointments/doctor', {
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch appointments');
+            }
+
+            const data = await response.json();
+            setAppointments(data.appointments);
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch appointments');
+            notify({ message: err.message || 'Failed to fetch appointments', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateStatus = (appointment: Appointment) => {
+        setSelectedAppointment(appointment);
+        setIsStatusModalOpen(true);
+    };
+
+    const handleCloseStatusModal = () => {
+        setIsStatusModalOpen(false);
+        setSelectedAppointment(null);
+        setStatusNote('');
+    };
+
+    const handleSubmitStatusUpdate = async (newStatus: string) => {
+        if (!selectedAppointment) {
+            notify({ message: 'No appointment selected', type: 'error' });
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/appointments/${selectedAppointment.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    status: newStatus,
+                    note: statusNote,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to update appointment status');
+            }
+
+            notify({ message: 'Appointment status updated successfully', type: 'success' });
+            handleCloseStatusModal();
+            fetchAppointments();
+        } catch (err: any) {
+            notify({ message: err.message || 'Failed to update appointment status', type: 'error' });
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'scheduled':
+                return 'primary';
+            case 'completed':
+                return 'success';
+            case 'cancelled':
+                return 'error';
+            default:
+                return 'default';
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center p-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+                <p>{error}</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <Typography variant="h5" component="h2" className="font-semibold">
+                My Appointments
+            </Typography>
+
+            {appointments.length === 0 ? (
+                <div className="text-center py-8">
+                    <Typography variant="body1" color="textSecondary">
+                        You have no appointments scheduled.
+                    </Typography>
+                </div>
+            ) : (
+                <Grid container spacing={3}>
+                    {appointments.map((appointment) => (
+                        <Grid item xs={12} md={6} key={appointment.id}>
+                            <Card className="h-full">
+                                <CardContent>
+                                    <Box className="flex justify-between items-start mb-4">
+                                        <Typography variant="h6" component="h3" className="font-semibold">
+                                            {appointment.user.fullName}
+                                        </Typography>
+                                        <Chip
+                                            label={appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                                            color={getStatusColor(appointment.status)}
+                                            size="small"
+                                        />
+                                    </Box>
+
+                                    <Typography variant="body2" className="mb-2">
+                                        Email: {appointment.user.email}
+                                    </Typography>
+
+                                    <Typography variant="body2" className="mb-2">
+                                        Phone: {appointment.user.phone}
+                                    </Typography>
+
+                                    <Box className="mt-4 space-y-2">
+                                        <Typography variant="body2">
+                                            <strong>Date:</strong>{' '}
+                                            {format(parseISO(appointment.date), 'MMMM d, yyyy')}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            <strong>Time:</strong> {appointment.time}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            <strong>Reason:</strong> {appointment.reason}
+                                        </Typography>
+                                    </Box>
+
+                                    {appointment.status === 'scheduled' && (
+                                        <Box className="mt-4 space-x-2">
+                                            <Button
+                                                variant="contained"
+                                                color="success"
+                                                onClick={() => handleUpdateStatus(appointment)}
+                                            >
+                                                Mark as Completed
+                                            </Button>
+                                            <Button
+                                                variant="outlined"
+                                                color="error"
+                                                onClick={() => handleUpdateStatus(appointment)}
+                                            >
+                                                Cancel
+                                            </Button>
+                                        </Box>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            )}
+
+            <Dialog open={isStatusModalOpen} onClose={handleCloseStatusModal} maxWidth="sm" fullWidth>
+                <DialogTitle>Update Appointment Status</DialogTitle>
+                <DialogContent>
+                    {selectedAppointment && (
+                        <div className="space-y-4 mt-4">
+                            <Typography variant="body1">
+                                Update status for appointment with {selectedAppointment.user.fullName} on{' '}
+                                {format(parseISO(selectedAppointment.date), 'MMMM d, yyyy')} at{' '}
+                                {selectedAppointment.time}?
+                            </Typography>
+
+                            <TextField
+                                fullWidth
+                                label="Add a note (optional)"
+                                multiline
+                                rows={3}
+                                value={statusNote}
+                                onChange={(e) => setStatusNote(e.target.value)}
+                            />
+                        </div>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseStatusModal}>Cancel</Button>
+                    <Button
+                        onClick={() => handleSubmitStatusUpdate('completed')}
+                        variant="contained"
+                        color="success"
+                    >
+                        Mark as Completed
+                    </Button>
+                    <Button
+                        onClick={() => handleSubmitStatusUpdate('cancelled')}
+                        variant="contained"
+                        color="error"
+                    >
+                        Cancel Appointment
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </div>
+    );
+};
+
+export default DoctorAppointments; 

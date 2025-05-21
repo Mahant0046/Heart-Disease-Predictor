@@ -1,0 +1,254 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
+import {
+    Card,
+    CardContent,
+    Typography,
+    Button,
+    Grid,
+    Chip,
+    Box,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    TextField,
+} from '@mui/material';
+import { format, parseISO } from 'date-fns';
+
+interface Appointment {
+    id: number;
+    userId: number;
+    doctorId: number;
+    date: string;
+    time: string;
+    reason: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    doctor: {
+        id: number;
+        fullName: string;
+        specialization: string;
+        hospital: string;
+        address: string;
+    };
+}
+
+const UserAppointments: React.FC = () => {
+    const { currentUser } = useAuth();
+    const { notify } = useNotification();
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+    const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+
+    useEffect(() => {
+        fetchAppointments();
+    }, []);
+
+    const fetchAppointments = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const response = await fetch('/api/appointments', {
+                credentials: 'include',
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch appointments');
+            }
+
+            const data = await response.json();
+            setAppointments(data.appointments);
+        } catch (err: any) {
+            setError(err.message || 'Failed to fetch appointments');
+            notify({ message: err.message || 'Failed to fetch appointments', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelAppointment = (appointment: Appointment) => {
+        setSelectedAppointment(appointment);
+        setIsCancelModalOpen(true);
+    };
+
+    const handleCloseCancelModal = () => {
+        setIsCancelModalOpen(false);
+        setSelectedAppointment(null);
+        setCancelReason('');
+    };
+
+    const handleSubmitCancellation = async () => {
+        if (!selectedAppointment || !cancelReason) {
+            notify({ message: 'Please provide a reason for cancellation', type: 'error' });
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/appointments/${selectedAppointment.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    status: 'cancelled',
+                    reason: cancelReason,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to cancel appointment');
+            }
+
+            notify({ message: 'Appointment cancelled successfully', type: 'success' });
+            handleCloseCancelModal();
+            fetchAppointments();
+        } catch (err: any) {
+            notify({ message: err.message || 'Failed to cancel appointment', type: 'error' });
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'scheduled':
+                return 'primary';
+            case 'completed':
+                return 'success';
+            case 'cancelled':
+                return 'error';
+            default:
+                return 'default';
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center p-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
+                <p>{error}</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <Typography variant="h5" component="h2" className="font-semibold">
+                My Appointments
+            </Typography>
+
+            {appointments.length === 0 ? (
+                <div className="text-center py-8">
+                    <Typography variant="body1" color="textSecondary">
+                        You have no appointments scheduled.
+                    </Typography>
+                </div>
+            ) : (
+                <Grid container spacing={3}>
+                    {appointments.map((appointment) => (
+                        <Grid item xs={12} md={6} key={appointment.id}>
+                            <Card className="h-full">
+                                <CardContent>
+                                    <Box className="flex justify-between items-start mb-4">
+                                        <Typography variant="h6" component="h3" className="font-semibold">
+                                            Dr. {appointment.doctor.fullName}
+                                        </Typography>
+                                        <Chip
+                                            label={appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                                            color={getStatusColor(appointment.status)}
+                                            size="small"
+                                        />
+                                    </Box>
+
+                                    <Typography color="textSecondary" gutterBottom>
+                                        {appointment.doctor.specialization}
+                                    </Typography>
+
+                                    <Typography variant="body2" className="mb-2">
+                                        {appointment.doctor.hospital}
+                                    </Typography>
+
+                                    <Typography variant="body2" className="mb-2">
+                                        {appointment.doctor.address}
+                                    </Typography>
+
+                                    <Box className="mt-4 space-y-2">
+                                        <Typography variant="body2">
+                                            <strong>Date:</strong>{' '}
+                                            {format(parseISO(appointment.date), 'MMMM d, yyyy')}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            <strong>Time:</strong> {appointment.time}
+                                        </Typography>
+                                        <Typography variant="body2">
+                                            <strong>Reason:</strong> {appointment.reason}
+                                        </Typography>
+                                    </Box>
+
+                                    {appointment.status === 'scheduled' && (
+                                        <Button
+                                            variant="outlined"
+                                            color="error"
+                                            fullWidth
+                                            className="mt-4"
+                                            onClick={() => handleCancelAppointment(appointment)}
+                                        >
+                                            Cancel Appointment
+                                        </Button>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            )}
+
+            <Dialog open={isCancelModalOpen} onClose={handleCloseCancelModal} maxWidth="sm" fullWidth>
+                <DialogTitle>Cancel Appointment</DialogTitle>
+                <DialogContent>
+                    {selectedAppointment && (
+                        <div className="space-y-4 mt-4">
+                            <Typography variant="body1">
+                                Are you sure you want to cancel your appointment with Dr.{' '}
+                                {selectedAppointment.doctor.fullName} on{' '}
+                                {format(parseISO(selectedAppointment.date), 'MMMM d, yyyy')} at{' '}
+                                {selectedAppointment.time}?
+                            </Typography>
+
+                            <TextField
+                                fullWidth
+                                label="Reason for Cancellation"
+                                multiline
+                                rows={3}
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                required
+                            />
+                        </div>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseCancelModal}>Keep Appointment</Button>
+                    <Button onClick={handleSubmitCancellation} variant="contained" color="error">
+                        Cancel Appointment
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </div>
+    );
+};
+
+export default UserAppointments; 
