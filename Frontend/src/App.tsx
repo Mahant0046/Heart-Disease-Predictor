@@ -1,4 +1,4 @@
-// src/App.tsx
+
 import React from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import WelcomePage from './components/WelcomePage';
